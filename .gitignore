@@ -134,4 +134,5 @@ dmypy.json
 .idea
 .vscode
 
+COMMANDS.md
 TODO.md

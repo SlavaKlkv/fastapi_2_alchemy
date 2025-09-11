@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,3 +19,17 @@ class Setting(BaseSettings):
         extra='allow',
         env_file=os.path.abspath(os.path.join(BASE_DIR, '.env')),
     )
+
+    @property
+    def db_connection_url(self) -> str:
+        """
+        Возврат строки с адресом подключения к базе данных.
+        """
+        user = quote(self.DB_USER)
+        password = quote(self.DB_PASS)
+        hostport = (
+            f'{self.DB_HOST}:{self.DB_PORT}' if self.DB_PORT else self.DB_HOST
+        )
+        return (
+            f'postgresql+asyncpg://{user}:{password}@{hostport}/{self.DB_NAME}'
+        )
