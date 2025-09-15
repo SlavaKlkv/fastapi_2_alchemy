@@ -1,66 +1,41 @@
-import re
-from typing import ClassVar
+from datetime import datetime
+from typing import TypedDict
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import EmailStr
 
-from core.constants import (
-    FULL_NAME_MIN_LENGTH,
-    PASSWORD_MIN_LENGTH,
-    USERNAME_MAX_LENGTH,
-    USERNAME_MIN_LENGTH,
-)
+from apps.user.schemas import User, UserCreate
 
 
-class User(BaseModel):
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True,  # повторная валидация при изменении полей
+class UserRecord(TypedDict):
+    id: int
+    username: str
+    email: EmailStr
+    full_name: str | None
+    disabled: bool
+    hashed_password: str
+    created_at: float
+    updated_at: float
+
+
+def to_record(new_id: int, payload: UserCreate, pwd_hash: str) -> UserRecord:
+    now = datetime.now().timestamp()
+    return UserRecord(
+        id=new_id,
+        username=payload.username,
+        email=payload.email,
+        full_name=payload.full_name,
+        disabled=False,
+        hashed_password=pwd_hash,
+        created_at=now,
+        updated_at=now,
     )
 
-    USERNAME_RE: ClassVar[re.Pattern[str]] = re.compile(r'^[a-z0-9_.-]+$')
 
-    id: int = Field(
-        ..., gt=0, description='Положительный идентификатор пользователя'
-    )
-    username: str = Field(
-        ...,
-        min_length=USERNAME_MIN_LENGTH,
-        max_length=USERNAME_MAX_LENGTH,
-        description='Уникальный логин (3–30)',
-    )
-    email: EmailStr = Field(..., description='Корректный e-mail')
-    full_name: str | None = Field(
-        default=None,
-        min_length=FULL_NAME_MIN_LENGTH,
-        max_length=FULL_NAME_MIN_LENGTH,
-        description='Имя и фамилия (опционально)',
-    )
-    disabled: bool = Field(
-        default=False, description='Признак блокировки пользователя'
-    )
-
-    @field_validator('username')
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        if not cls.USERNAME_RE.fullmatch(v.casefold().strip()):
-            raise ValueError(
-                'username может содержать только '
-                "латинские буквы, цифры, символы '._-'"
-            )
-        return v
-
-    @field_validator('full_name')
-    def validate_full_name(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        if v.strip() == '':
-            raise ValueError('full_name не может быть пустой строкой')
-        return v
-
-
-class UserInDB(User):
-    hashed_password: str = Field(
-        ...,
-        min_length=PASSWORD_MIN_LENGTH,
-        description='Хэш пароля (не пустой)',
+def to_public(rec: UserRecord) -> User:
+    return User(
+        id=rec['id'],
+        username=rec['username'],
+        email=rec['email'],
+        full_name=rec['full_name'],
+        disabled=rec['disabled'],
     )

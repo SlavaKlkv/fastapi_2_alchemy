@@ -1,8 +1,9 @@
 from typing import Iterable, List
 
 from apps.user.repository import UserRepository
-from apps.user.schemas import User, UserCreate, UserUpdate
+from apps.user.schemas import User, UserCreate, UserDeleteResponse, UserUpdate
 from core.exceptions import UserAlreadyExistsException, UserNotFoundException
+from core.security import hash_password
 
 
 class UserService:
@@ -30,22 +31,29 @@ class UserService:
             u.username == payload.username for u in self._repository.get_all()
         ):
             raise UserAlreadyExistsException('username')
-        return self._repository.create(payload)
+        pwd_hash = hash_password(payload.password)
+        return self._repository.create(payload, pwd_hash)
 
     def create_users(self, payloads: List[UserCreate]) -> list[User]:
         existing_usernames = {u.username for u in self._repository.get_all()}
         for payload in payloads:
             if payload.username in existing_usernames:
                 raise UserAlreadyExistsException('username')
-        return self._repository.create_several(payloads)
+        payloads_with_hashes = [
+            (p, hash_password(p.password)) for p in payloads
+        ]
+        return self._repository.create_several(payloads_with_hashes)
 
     def update_user(self, user_id: int, payload: UserUpdate) -> User | None:
+        if payload.password is not None:
+            pwd_hash = hash_password(payload.password)
+            payload.password = pwd_hash
         user = self._repository.update(user_id, payload)
         if user is None:
             raise UserNotFoundException(user_id)
         return user
 
-    def delete_user(self, user_id: int) -> User | None:
+    def delete_user(self, user_id: int) -> UserDeleteResponse | None:
         user = self._repository.delete(user_id)
         if user is None:
             raise UserNotFoundException(user_id)

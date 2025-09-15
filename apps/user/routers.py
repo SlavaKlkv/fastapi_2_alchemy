@@ -1,9 +1,20 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from apps.user.controllers import UserController
-from apps.user.schemas import User, UserCreate, UsersList, UserUpdate
+from apps.user.schemas import (
+    User,
+    UserCreate,
+    UserDeleteResponse,
+    UsersList,
+    UserUpdate,
+)
+from core.security import current_subject
 
-users_router = APIRouter(prefix='/users', tags=['users'])
+users_router = APIRouter(
+    prefix='/users',
+    tags=['users'],
+    dependencies=[Depends(current_subject)],
+)
 _controller = UserController()
 
 
@@ -43,7 +54,7 @@ def create_user(payload: UserCreate) -> User:
     '/bulk',
     response_model=UsersList,
     status_code=201,
-    summary='Создать нескольких пользователей',
+    summary='Создать несколько пользователей',
 )
 def create_users(payloads: list[UserCreate]) -> UsersList:
     return _controller.create_users(payloads)
@@ -58,8 +69,8 @@ def update_user(user_id: int, payload: UserUpdate) -> User:
 
 @users_router.delete(
     '/{user_id}',
-    response_model=User,
+    response_model=UserDeleteResponse,
     summary='Удалить пользователя и вернуть его данные',
 )
-def delete_user(user_id: int) -> User:
+def delete_user(user_id: int) -> UserDeleteResponse:
     return _controller.delete_user(user_id)

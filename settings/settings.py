@@ -15,6 +15,12 @@ class Setting(BaseSettings):
     DB_USER: str = 'postgres'
     DB_PASS: str = 'postgres'
     DB_NAME: str = 'postgres'
+
+    SECRET_KEY: str = 'SECRET_KEY'
+    ALGORITHM: str = 'HS256'
+    ACCESS_TTL_MIN: int = 15
+    REFRESH_TTL_DAYS: int = 7
+
     model_config = SettingsConfigDict(
         extra='allow',
         env_file=os.path.abspath(os.path.join(BASE_DIR, '.env')),

@@ -1,8 +1,11 @@
-# Константы валидации полей пользователя
+import re
+
 USERNAME_MIN_LENGTH = 3
 USERNAME_MAX_LENGTH = 30
+USERNAME_RE = re.compile(r'^[a-z0-9_.-]+$')
 
 FULL_NAME_MIN_LENGTH = 1
 FULL_NAME_MAX_LENGTH = 100
 
 PASSWORD_MIN_LENGTH = 1
+PASSWORD_MAX_LENGTH = 128

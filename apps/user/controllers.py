@@ -1,4 +1,10 @@
-from apps.user.schemas import User, UserCreate, UsersList, UserUpdate
+from apps.user.schemas import (
+    User,
+    UserCreate,
+    UserDeleteResponse,
+    UsersList,
+    UserUpdate,
+)
 from apps.user.services import UserService
 
 
@@ -27,5 +33,5 @@ class UserController:
     def update_user(self, user_id: int, payload: UserUpdate) -> User:
         return self.service.update_user(user_id, payload)
 
-    def delete_user(self, user_id: int) -> User:
+    def delete_user(self, user_id: int) -> UserDeleteResponse:
         return self.service.delete_user(user_id)
