@@ -5,6 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from apps.auth.services import AuthService
+from core.database import SessionLocal
 
 EXCLUDE_PATHS: set[str] = {
     '/docs',
@@ -18,10 +19,6 @@ EXCLUDE_PREFIXES: tuple[str, ...] = ('/api/v1/auth',)
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
     """JWT-проверка заголовка Authorization: Bearer <access_token>."""
-
-    def __init__(self, app):
-        super().__init__(app)
-        self._auth = AuthService()
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -41,7 +38,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             )
 
         token = auth_header.removeprefix('Bearer ').strip()
-        payload = self._auth.decode_access(token)
+        async with SessionLocal() as session:
+            auth = AuthService(session)
+            payload = auth.decode_access(token)
+
         request.state.sub = payload.get('sub')
 
         return await call_next(request)

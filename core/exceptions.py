@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from fastapi import HTTPException, Request, status
@@ -5,36 +6,10 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# ============================== Кастомные исключения =========================
-
-
-class StoreError(HTTPException):
-    """Базовая ошибка хранилища."""
-
-    def __init__(
-        self,
-        detail: str = 'Ошибка хранилища',
-        status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
-    ):
-        super().__init__(status_code=status_code, detail=detail)
-
-
-class StoreConnectionError(StoreError):
-    def __init__(self, detail: str = 'Не удалось подключиться к хранилищу'):
-        super().__init__(
-            detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-
-class StoreDataError(StoreError):
-    """Ошибка целостности/формата данных в хранилище."""
-
-    def __init__(self, detail: str = 'Некорректные данные в хранилище'):
-        super().__init__(
-            detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+logger = logging.getLogger(__name__)
 
 
 class UserNotFoundException(HTTPException):
@@ -52,6 +27,24 @@ class UserAlreadyExistsException(HTTPException):
         super().__init__(
             status_code=status.HTTP_409_CONFLICT,
             detail=f'Пользователь с таким {field} уже существует',
+        )
+
+
+class ProjectNotFoundException(HTTPException):
+    def __init__(self, project_id: int | None = None):
+        msg = (
+            'Проект не найден'
+            if project_id is None
+            else f'Проект с ID {project_id} не найден'
+        )
+        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+
+
+class IntegrityConflictException(HTTPException):
+    def __init__(self, detail: str = 'Нарушение целостности данных'):
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
         )
 
 
@@ -122,6 +115,34 @@ def init_exception_handlers(app):
     Единый формат ошибок: {"detail": "...", "errors": [...] (опционально)}.
     """
 
+    # --- helpers for DB errors (PostgreSQL SQLSTATE) ---
+    def _pg_err_info(exc: IntegrityError) -> tuple[int, str]:
+        """
+        Определяет соответствие кода SQLSTATE PostgreSQL HTTP-статусу
+            и сообщению об ошибке.
+        Часто встречающиеся SQLSTATE-коды:
+        23505 — нарушение уникальности (unique_violation),
+        23503 — нарушение внешнего ключа (foreign_key_violation),
+        23502 — значение NULL в обязательном поле (not_null_violation),
+        23514 — нарушение ограничения CHECK (check_violation).
+        """
+        code = getattr(getattr(exc, 'orig', None), 'pgcode', None)
+        status_code = status.HTTP_400_BAD_REQUEST
+        message = 'Нарушение целостности данных'
+        if code == '23505':
+            status_code = status.HTTP_409_CONFLICT
+            message = 'Нарушение уникальности'
+        elif code == '23503':
+            status_code = status.HTTP_400_BAD_REQUEST
+            message = 'Нарушение внешнего ключа'
+        elif code == '23502':
+            status_code = status.HTTP_400_BAD_REQUEST
+            message = 'Обязательное поле не заполнено'
+        elif code == '23514':
+            status_code = status.HTTP_400_BAD_REQUEST
+            message = 'Нарушение ограничения CHECK'
+        return status_code, message
+
     @app.exception_handler(InvalidCredentials)
     async def invalid_credentials_handler(
         request: Request, exc: InvalidCredentials
@@ -185,6 +206,17 @@ def init_exception_handlers(app):
         request: Request, exc: StarletteHTTPException
     ):
         return _json_error(exc.status_code, str(exc.detail))
+
+    @app.exception_handler(IntegrityError)
+    async def integrity_error_handler(request: Request, exc: IntegrityError):
+        status_code, message = _pg_err_info(exc)
+        return _json_error(status_code, message)
+
+    @app.exception_handler(DBAPIError)
+    async def dbapi_error_handler(request: Request, exc: DBAPIError):
+        return _json_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, 'Ошибка базы данных'
+        )
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):

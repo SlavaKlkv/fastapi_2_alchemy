@@ -13,7 +13,7 @@ from pydantic import (
     validate_email,
 )
 
-from apps.user.models import User
+from apps.user.schemas import User as UserSchema
 from core.constants import (
     FULL_NAME_MAX_LENGTH,
     FULL_NAME_MIN_LENGTH,
@@ -155,12 +155,12 @@ class RevokeRequest(BaseModel):
     refresh_token: str
 
 
-class AuthUser(User):
-    model_config = ConfigDict(title='AuthUser')
+class AuthUser(UserSchema):
+    model_config = ConfigDict(from_attributes=True, title='AuthUser')
 
 
-def to_auth_user(user: User) -> AuthUser:
-    return AuthUser.model_validate(user.model_dump())
+def to_auth_user(user: UserSchema | object) -> AuthUser:
+    return AuthUser.model_validate(user)
 
 
 class AuthResponse(BaseModel):

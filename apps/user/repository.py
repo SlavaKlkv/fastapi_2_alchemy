@@ -1,132 +1,221 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Sequence
 
-from apps.user.models import UserRecord, to_public, to_record
-from apps.user.schemas import User, UserCreate, UserDeleteResponse, UserUpdate
-from core.store import DatabaseSession
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from apps.user.models import User
+from apps.user.schemas import (
+    User as UserSchema,
+)
+from apps.user.schemas import (
+    UserCreate,
+    UserDeleteResponse,
+    UserUpdate,
+)
 
 
 class UserRepository:
-    USERS_KEY = 'users'
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
 
     # ------------------------- helpers -------------------------
 
-    def _ensure_bucket(self, root: dict) -> dict[int, dict]:
-        """
-        Гарантирует наличие раздела 'users' в корне хранилища и возвращает его.
-        """
-        bucket = root.get(self.USERS_KEY)
-        if bucket is None:
-            bucket = {}
-            root[self.USERS_KEY] = bucket
-        return bucket
-
-    def _next_id(self, bucket: dict[int, dict]) -> int:
-        return max(bucket.keys(), default=0) + 1
-
-    def _apply_updates(self, target: dict, patch: UserUpdate) -> None:
-        updates = patch.model_dump(exclude_unset=True)
-        if 'password' in updates:
-            target['hashed_password'] = updates.pop('password')
-        target.update(updates)
+    @staticmethod
+    def _to_schema(obj: User) -> UserSchema:
+        return UserSchema.model_validate(obj)
 
     # ------------------------- queries -------------------------
 
-    def get_raw_by_email(self, email: str) -> dict | None:
-        normalized = email.casefold().strip()
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            for rec in users.values():
-                if (
-                    val := rec.get('email')
-                ) and val.casefold().strip() == normalized:
-                    return rec
-        return None
+    async def get_raw_by_email(self, email: str) -> User | None:
+        """
+        SQL:
+        SELECT u.*
+        FROM users AS u
+        WHERE lower(trim(u.email)) = lower(trim(:email))
+        LIMIT 1;
+        """
+        stmt = (
+            select(User)
+            .where(
+                func.lower(func.trim(User.email))
+                == func.lower(func.trim(email))
+            )
+            .limit(1)
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
 
-    def get_raw_by_username(self, username: str) -> dict | None:
-        normalized = username.casefold().strip()
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            for rec in users.values():
-                if (
-                    username_val := rec.get('username')
-                ) and username_val.casefold().strip() == normalized:
-                    return rec
-        return None
+    async def get_raw_by_username(self, username: str) -> User | None:
+        """
+        SQL:
+        SELECT u.*
+        FROM users AS u
+        WHERE lower(trim(u.username)) = lower(trim(:username))
+        LIMIT 1;
+        """
+        stmt = (
+            select(User)
+            .where(
+                func.lower(func.trim(User.username))
+                == func.lower(func.trim(username))
+            )
+            .limit(1)
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
 
-    def get_by_username(self, username: str) -> User | None:
-        rec = self.get_raw_by_username(username)
-        return to_public(rec) if rec else None
+    async def get_by_username(self, username: str) -> UserSchema | None:
+        """
+        SQL:
+        SELECT u.*
+        FROM users AS u
+        WHERE lower(trim(u.username)) = lower(trim(:username))
+        LIMIT 1;
+        """
+        obj = await self.get_raw_by_username(username)
+        return self._to_schema(obj) if obj else None
 
-    def get_by_id(self, user_id: int) -> User | None:
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            raw = users.get(user_id)
-        return to_public(raw) if raw else None
+    async def get_by_id(self, user_id: int) -> UserSchema | None:
+        """
+        SQL:
+        SELECT u.*
+        FROM users AS u
+        WHERE u.id = :user_id
+        LIMIT 1;
+        """
+        res = await self.session.execute(
+            select(User).where(User.id == user_id).limit(1)
+        )
+        obj = res.scalar_one_or_none()
+        return self._to_schema(obj) if obj else None
 
-    def get_several_by_ids(self, ids: Iterable[int]) -> list[User]:
-        id_set = set(ids)
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            raw_data = [u for uid, u in users.items() if uid in id_set]
-        return [to_public(r) for r in raw_data]
+    async def get_several_by_ids(self, ids: Iterable[int]) -> list[UserSchema]:
+        """
+        SQL:
+        SELECT u.*
+        FROM users AS u
+        WHERE u.id = ANY(:ids);
+        """
+        id_list = list(ids)
+        if not id_list:
+            return []
+        res = await self.session.execute(
+            select(User).where(User.id.in_(id_list))
+        )
+        objs: Sequence[User] = res.scalars().all()
+        return [self._to_schema(o) for o in objs]
 
-    def get_all(self) -> list[User]:
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            raw_data = list(users.values())
-        return [to_public(r) for r in raw_data]
+    async def get_all(self) -> list[UserSchema]:
+        """
+        SQL:
+        SELECT u.*
+        FROM users AS u
+        ORDER BY u.id ASC;
+        """
+        res = await self.session.execute(select(User).order_by(User.id.asc()))
+        objs: Sequence[User] = res.scalars().all()
+        return [self._to_schema(o) for o in objs]
 
     # ------------------------- mutations -------------------------
 
-    def create(self, payload: UserCreate, pwd_hash: str) -> User:
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            new_id = self._next_id(users)
-            record: UserRecord = to_record(new_id, payload, pwd_hash)
-            users[new_id] = record
-            store.set_store_data(root)
-        return to_public(record)
+    async def create(self, payload: UserCreate, pwd_hash: str) -> UserSchema:
+        """
+        SQL:
+        INSERT INTO users
+            (username, email, full_name, hashed_password)
+        VALUES (:username, :email, :full_name, :disabled, :hashed_password)
+        RETURNING *;
+        """
+        obj = User(
+            username=payload.username,
+            email=payload.email,
+            full_name=payload.full_name,
+            hashed_password=pwd_hash,
+        )
+        self.session.add(obj)
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return self._to_schema(obj)
 
-    def create_several(
+    async def create_several(
         self, payloads: list[tuple[UserCreate, str]]
-    ) -> list[User]:
-        created: list[User] = []
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            for payload in payloads:
-                new_id = self._next_id(users)
-                payload_item, pwd_hash = payload
-                record: UserRecord = to_record(new_id, payload_item, pwd_hash)
-                users[new_id] = record
-                created.append(to_public(record))
-            store.set_store_data(root)
+    ) -> list[UserSchema]:
+        """
+        SQL:
+        INSERT INTO users
+            (username, email, full_name, hashed_password)
+        VALUES (:username, :email, :full_name, :disabled, :hashed_password)
+        RETURNING *; -- повторяется для каждой записи
+        """
+        created: list[UserSchema] = []
+        for payload, pwd_hash in payloads:
+            obj = User(
+                username=payload.username,
+                email=payload.email,
+                full_name=payload.full_name,
+                hashed_password=pwd_hash,
+            )
+            self.session.add(obj)
+            await self.session.flush()
+            await self.session.refresh(obj)
+            created.append(self._to_schema(obj))
         return created
 
-    def update(self, user_id: int, payload: UserUpdate) -> User | None:
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            if (existing := users.get(user_id)) is None:
-                return None
-            self._apply_updates(existing, payload)
-            users[user_id] = existing
-            store.set_store_data(root)
-        return to_public(existing)
+    async def update(
+        self, user_id: int, payload: UserUpdate
+    ) -> UserSchema | None:
+        """
+        SQL:
+        UPDATE users
+        SET
+            username = COALESCE(:username, username),
+            email = COALESCE(:email, email),
+            full_name = COALESCE(:full_name, full_name),
+            hashed_password = COALESCE(:hashed_password, hashed_password),
+        WHERE id = :user_id
+        RETURNING *;
+        """
+        obj_res = await self.session.execute(
+            select(User).where(User.id == user_id).limit(1)
+        )
+        obj = obj_res.scalar_one_or_none()
+        if obj is None:
+            return None
 
-    def delete(self, user_id: int) -> UserDeleteResponse | None:
-        with DatabaseSession() as store:
-            root = store.get_store()
-            users = self._ensure_bucket(root)
-            removed = users.pop(user_id, None)
-            if removed is not None:
-                store.set_store_data(root)
-        return UserDeleteResponse(**removed) if removed else None
+        data = payload.model_dump(exclude_unset=True)
+        if 'password' in data:
+            data['hashed_password'] = data.pop('password')
+
+        for key, value in data.items():
+            setattr(obj, key, value)
+
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return self._to_schema(obj)
+
+    async def delete(self, user_id: int) -> UserDeleteResponse | None:
+        """
+        SQL:
+        DELETE FROM users
+        WHERE id = :user_id
+        RETURNING *;
+        """
+        res = await self.session.execute(
+            select(User).where(User.id == user_id).limit(1)
+        )
+        obj = res.scalar_one_or_none()
+        if obj is None:
+            return None
+
+        await self.session.delete(obj)
+        return UserDeleteResponse(
+            id=obj.id,
+            username=obj.username,
+            email=obj.email,
+            full_name=obj.full_name,
+            disabled=obj.disabled,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at,
+        )

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.auth.schemas import (
     AuthResponse,
@@ -15,9 +18,11 @@ from apps.auth.schemas import (
 )
 from apps.auth.services import AuthService
 from apps.user.schemas import User, UserCreate
+from core.database import get_async_session
+
+logger = logging.getLogger(__name__)
 
 auth_router = APIRouter(prefix='/auth', tags=['auth'])
-_service = AuthService()
 
 
 @auth_router.post(
@@ -26,15 +31,16 @@ _service = AuthService()
     status_code=status.HTTP_200_OK,
     summary='Вход через form-data (используется для Swagger Authorize)',
 )
-def login(form: OAuth2PasswordRequestForm = Depends()) -> TokenPair:
+async def login(
+    form: OAuth2PasswordRequestForm = Depends(),
+    session: AsyncSession = Depends(get_async_session),
+) -> TokenPair:
     """Авторизация через OAuth2PasswordRequestForm.
-    Она фиксированно называет поле "username",
-    но здесь оно может содержать username или email.
+    Поле username может содержать username или email.
     """
-
-    universal_login = form.username
-    user = _service.authenticate(universal_login, form.password)
-    return _service.issue_tokens(user)
+    service = AuthService(session)
+    user = await service.authenticate(form.username, form.password)
+    return service.issue_tokens(user)
 
 
 @auth_router.post(
@@ -42,11 +48,14 @@ def login(form: OAuth2PasswordRequestForm = Depends()) -> TokenPair:
     response_model=AuthResponse,
     status_code=status.HTTP_200_OK,
     summary='Вход по JSON: username/email + password и '
-    'получение access, refresh токенов',
+    'получение access/refresh токенов',
 )
-def login_json(body: LoginRequest) -> AuthResponse:
-    user = _service.authenticate(body.login, body.password)
-    tokens = _service.issue_tokens(user)
+async def login_json(
+    body: LoginRequest, session: AsyncSession = Depends(get_async_session)
+) -> AuthResponse:
+    service = AuthService(session)
+    user = await service.authenticate(body.login, body.password)
+    tokens = service.issue_tokens(user)
     return AuthResponse(user=to_auth_user(user), tokens=tokens)
 
 
@@ -56,9 +65,13 @@ def login_json(body: LoginRequest) -> AuthResponse:
     status_code=status.HTTP_201_CREATED,
     summary='Регистрация пользователя',
 )
-def register(payload: RegisterRequest) -> User:
+async def register(
+    payload: RegisterRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    service = AuthService(session)
     user_payload = UserCreate(**payload.model_dump())
-    return _service.register(user_payload)
+    return await service.register(user_payload)
 
 
 @auth_router.post(
@@ -67,8 +80,12 @@ def register(payload: RegisterRequest) -> User:
     status_code=status.HTTP_200_OK,
     summary='Обновление токенов по refresh',
 )
-def refresh(body: RefreshRequest) -> TokenPair:
-    return _service.refresh(body.refresh_token)
+async def refresh(
+    body: RefreshRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> TokenPair:
+    service = AuthService(session)
+    return await service.refresh(body.refresh_token)
 
 
 @auth_router.post(
@@ -77,7 +94,10 @@ def refresh(body: RefreshRequest) -> TokenPair:
     summary='Отзыв токена',
     description='Аннулирует refresh-токен, делая его недействительным.',
 )
-def revoke_token(request: RevokeRequest) -> Message:
-    token = request.refresh_token
-    _service.revoke_refresh_token(token)
+async def revoke_token(
+    request: RevokeRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> Message:
+    service = AuthService(session)
+    await service.revoke_refresh_token(request.refresh_token)
     return Message(message='refresh-токен отозван')

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.user.controllers import UserController
 from apps.user.schemas import (
@@ -8,6 +9,7 @@ from apps.user.schemas import (
     UsersList,
     UserUpdate,
 )
+from core.database import get_async_session
 from core.security import current_subject
 
 users_router = APIRouter(
@@ -15,14 +17,22 @@ users_router = APIRouter(
     tags=['users'],
     dependencies=[Depends(current_subject)],
 )
-_controller = UserController()
+
+
+async def get_controller(
+    session: AsyncSession = Depends(get_async_session),
+) -> UserController:
+    return UserController(session)
 
 
 @users_router.get(
     '/{user_id}', response_model=User, summary='Получить пользователя по ID'
 )
-def get_user(user_id: int) -> User:
-    return _controller.get_user(user_id)
+async def get_user(
+    user_id: int,
+    controller: UserController = Depends(get_controller),
+) -> User:
+    return await controller.get_user(user_id)
 
 
 @users_router.get(
@@ -30,14 +40,15 @@ def get_user(user_id: int) -> User:
     response_model=UsersList,
     summary='Получить пользователей: по списку id или всех',
 )
-def get_users(
+async def get_users(
     ids: list[int] | None = Query(
         default=None, description='Список ID для фильтрации'
     ),
+    controller: UserController = Depends(get_controller),
 ) -> UsersList:
     if ids:
-        return _controller.get_users_by_ids(ids)
-    return _controller.get_all_users()
+        return await controller.get_users_by_ids(ids)
+    return await controller.get_all_users()
 
 
 @users_router.post(
@@ -46,8 +57,11 @@ def get_users(
     status_code=201,
     summary='Создать одного пользователя',
 )
-def create_user(payload: UserCreate) -> User:
-    return _controller.create_user(payload)
+async def create_user(
+    payload: UserCreate,
+    controller: UserController = Depends(get_controller),
+) -> User:
+    return await controller.create_user(payload)
 
 
 @users_router.post(
@@ -56,15 +70,22 @@ def create_user(payload: UserCreate) -> User:
     status_code=201,
     summary='Создать несколько пользователей',
 )
-def create_users(payloads: list[UserCreate]) -> UsersList:
-    return _controller.create_users(payloads)
+async def create_users(
+    payloads: list[UserCreate],
+    controller: UserController = Depends(get_controller),
+) -> UsersList:
+    return await controller.create_users(payloads)
 
 
 @users_router.patch(
     '/{user_id}', response_model=User, summary='Обновить пользователя'
 )
-def update_user(user_id: int, payload: UserUpdate) -> User:
-    return _controller.update_user(user_id, payload)
+async def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    controller: UserController = Depends(get_controller),
+) -> User:
+    return await controller.update_user(user_id, payload)
 
 
 @users_router.delete(
@@ -72,5 +93,8 @@ def update_user(user_id: int, payload: UserUpdate) -> User:
     response_model=UserDeleteResponse,
     summary='Удалить пользователя и вернуть его данные',
 )
-def delete_user(user_id: int) -> UserDeleteResponse:
-    return _controller.delete_user(user_id)
+async def delete_user(
+    user_id: int,
+    controller: UserController = Depends(get_controller),
+) -> UserDeleteResponse:
+    return await controller.delete_user(user_id)

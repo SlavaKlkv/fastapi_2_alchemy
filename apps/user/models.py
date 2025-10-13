@@ -1,41 +1,63 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import TypedDict
+from typing import List
 
-from pydantic import EmailStr
+from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from apps.user.schemas import User, UserCreate
-
-
-class UserRecord(TypedDict):
-    id: int
-    username: str
-    email: EmailStr
-    full_name: str | None
-    disabled: bool
-    hashed_password: str
-    created_at: float
-    updated_at: float
+from apps.project.models import Project
+from core.database import Base
 
 
-def to_record(new_id: int, payload: UserCreate, pwd_hash: str) -> UserRecord:
-    now = datetime.now().timestamp()
-    return UserRecord(
-        id=new_id,
-        username=payload.username,
-        email=payload.email,
-        full_name=payload.full_name,
-        disabled=False,
-        hashed_password=pwd_hash,
-        created_at=now,
-        updated_at=now,
+class User(Base):
+    """
+    SQL:
+    CREATE TABLE users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(320) UNIQUE NOT NULL,
+        full_name VARCHAR(255),
+        disabled BOOLEAN NOT NULL DEFAULT false,
+        hashed_password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE projects
+    ADD CONSTRAINT fk_projects_user
+        FOREIGN KEY (person_in_charge)
+        REFERENCES users (id)
+        ON DELETE SET NULL;
+    """
+
+    __tablename__ = 'users'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(
+        String(50), unique=True, index=True, nullable=False
+    )
+    email: Mapped[str] = mapped_column(
+        String(320), unique=True, index=True, nullable=False
+    )
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default='false'
+    )
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
-
-def to_public(rec: UserRecord) -> User:
-    return User(
-        id=rec['id'],
-        username=rec['username'],
-        email=rec['email'],
-        full_name=rec['full_name'],
-        disabled=rec['disabled'],
+    projects: Mapped[List['Project']] = relationship(
+        back_populates='user',
+        cascade='all,delete-orphan',
+        passive_deletes=True,
     )

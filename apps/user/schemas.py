@@ -119,6 +119,8 @@ class User(UserBase):
     id: int = Field(..., ge=1)
     disabled: bool | None = False
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class UsersList(BaseModel):
     users: list[User]

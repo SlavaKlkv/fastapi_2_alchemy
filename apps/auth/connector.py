@@ -1,43 +1,56 @@
 from __future__ import annotations
 
-from typing import cast
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.user.models import UserRecord, to_public
 from apps.user.repository import UserRepository
-from apps.user.schemas import User, UserCreate
+from apps.user.schemas import User as UserSchema
+from apps.user.schemas import UserCreate
 from apps.user.services import UserService
 from core.security import verify_password
 
-_service = UserService()
-_repo = UserRepository()
 
-
-def get_user_by_username(username: str) -> User | None:
-    """Найти пользователя по username (используется при логине/регистрации)."""
-    return _repo.get_by_username(username)
-
-
-def create_user(payload: UserCreate) -> User:
+async def get_user_by_username(
+    username: str, session: AsyncSession
+) -> UserSchema | None:
     """
-    Регистрация пользователя через user-service
-    (хеширование выполняется в сервисе).
+    Найти пользователя по username (используется при логине/регистрации).
+    Делегирует запрос репозиторию.
     """
-    return _service.create_user(payload)
+    repo = UserRepository(session)
+    return await repo.get_by_username(username)
 
 
-def authenticate_credentials(login: str, password: str) -> User | None:
+async def create_user(
+    payload: UserCreate, session: AsyncSession
+) -> UserSchema:
+    """
+    Регистрация пользователя через сервис.
+    Хеширование пароля выполняется в сервисе.
+    """
+    service = UserService(session)
+    return await service.create_user(payload)
+
+
+async def authenticate_credentials(
+    login: str, password: str, session: AsyncSession
+) -> UserSchema | None:
     """
     Аутентифицировать пользователя по username/email и паролю.
-    Возврат публичной модели User при успешной проверке.
+    Возвращает публичную модель User при успешной проверке.
     """
-    login = login.casefold().strip()
-    if '@' in login:
-        rec = _repo.get_raw_by_email(login)
+    login_norm = login.casefold().strip()
+    repo = UserRepository(session)
+
+    if '@' in login_norm:
+        user_obj = await repo.get_raw_by_email(login_norm)
     else:
-        rec = _repo.get_raw_by_username(login)
-    if not rec:
+        user_obj = await repo.get_raw_by_username(login_norm)
+
+    if user_obj is None:
         return None
-    hashed = rec.get('hashed_password') or ''
+
+    hashed = getattr(user_obj, 'hashed_password', '') or ''
     if hashed and verify_password(password, hashed):
-        return to_public(cast(UserRecord, rec))
+        return UserSchema.model_validate(user_obj)
+
     return None
