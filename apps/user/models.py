@@ -18,7 +18,7 @@ class User(Base):
         username VARCHAR(50) UNIQUE NOT NULL,
         email VARCHAR(320) UNIQUE NOT NULL,
         full_name VARCHAR(255),
-        disabled BOOLEAN NOT NULL DEFAULT false,
+        disabled BOOLEAN NOT NULL DEFAULT FALSE,
         hashed_password VARCHAR(255) NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
