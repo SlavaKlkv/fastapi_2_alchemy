@@ -12,7 +12,7 @@ from apps.project.schemas import (
     ProjectsPage,
     ProjectUpdate,
 )
-from apps.project.services import ProjectService
+from apps.project.services import ProjectService, fetch_external_posts
 from apps.project.types import OrderField, ProjectStatus
 from core.constants import PAGE_DEFAULT, PER_PAGE_DEFAULT, PER_PAGE_MAX
 from core.database import get_async_session
@@ -23,6 +23,8 @@ projects_router = APIRouter(
     tags=['projects'],
     dependencies=[Depends(current_subject)],
 )
+
+external_router = APIRouter(prefix='/external', tags=['external'])
 
 
 async def get_service(
@@ -96,3 +98,16 @@ async def delete_project(
     service: ProjectService = Depends(get_service),
 ) -> ProjectDeleteResponse:
     return await service.delete_one(project_id)
+
+
+@external_router.get('/posts', summary='Получить посты из внешнего API')
+async def get_external_posts(
+    limit: int = Query(10, ge=1, le=100, description='Сколько постов вернуть'),
+    page: int = Query(
+        1,
+        ge=1,
+        description='Номер страницы',
+    ),
+    user_id: int | None = Query(None, description='Фильтр по автору (userId)'),
+):
+    return await fetch_external_posts(limit=limit, page=page, user_id=user_id)

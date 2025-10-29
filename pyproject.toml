@@ -1,6 +1,7 @@
 [project]
 name = "fastapi_2_alchemy"
 version = "2.0.0"
+package-mode = false
 description = ""
 authors = [
     {name = "Slava Kulikov",email = "slava_kulikov@outlook.com"}
@@ -43,8 +44,26 @@ indent-style = "space"
 [tool.mypy]
 python_version = "3.13"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-]
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.2"
+pytest-asyncio = "^1.2.0"
+pytest-mock = "^3.15.1"
+httpx = "^0.28.1"
+respx = "^0.22.0"
+allure-pytest = "^2.15.0"
+pytest-html = "^4.1.1"
+pytest-xdist = "^3.8.0"
+pytest-cov = "^7.0.0"
 
+[tool.pytest.ini_options]
+addopts = "-v -ra --maxfail=1 --disable-warnings --cov-report=html"
+testpaths = ["tests"]
+markers = [
+    "database: тесты, использующие базу данных",
+    'services: тестирование сервисов',
+    'controllers: тестирование эндпоинтов'
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
