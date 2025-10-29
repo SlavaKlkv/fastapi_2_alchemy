@@ -19,6 +19,24 @@ services:
       timeout: 5s
       retries: 10
 
+  db_test:
+    image: postgres:17
+    container_name: alchemy_db_test
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME_TEST}
+    ports:
+      - "${DB_PORT_TEST:-5433}:5432"
+    volumes:
+      - pg_data_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME_TEST}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   migrate:
     build: .
     container_name: alchemy_migrate
@@ -51,3 +69,4 @@ services:
 
 volumes:
   pg_data:
+  pg_data_test:

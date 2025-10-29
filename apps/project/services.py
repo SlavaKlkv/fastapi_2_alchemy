@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.project.repository import ProjectRepository
@@ -94,4 +95,21 @@ class ProjectService:
         if project is None:
             raise ProjectNotFoundException(project_id)
         await self.session.commit()
-        return project
+        return ProjectDeleteResponse(**project.model_dump())
+
+
+# ----------------------------- external service ------------------------------
+
+
+async def fetch_external_posts(
+    *, limit: int = 10, page: int = 1, user_id: int | None = None
+) -> list[dict]:
+    url = 'https://jsonplaceholder.typicode.com/posts'
+    params: dict[str, int] = {'_limit': limit, '_page': page}
+    if user_id is not None:
+        params['userId'] = user_id
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        return response.json()

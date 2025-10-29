@@ -14,7 +14,7 @@ EXCLUDE_PATHS: set[str] = {
     '/health',
     '/favicon.ico',
 }
-EXCLUDE_PREFIXES: tuple[str, ...] = ('/api/v1/auth',)
+EXCLUDE_PREFIXES: tuple[str, ...] = ('/api/v1/auth', '/api/v1/external/posts')
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
