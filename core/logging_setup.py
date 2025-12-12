@@ -1,28 +1,22 @@
 import logging
-import os
-import sys
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+import structlog
 
+logging.basicConfig(
+    format='%(message)s',
+    level=logging.INFO,
+)
 
-def logger_setup():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s - '
-        '%(filename)s - %(funcName)s - %(lineno)d'
-    )
-    os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
-    handler = RotatingFileHandler(
-        f'{BASE_DIR}/logs/logger.log', maxBytes=2_560_000, backupCount=5
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt='iso'),
+        structlog.processors.add_log_level,
+        structlog.processors.dict_tracebacks,
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+)
 
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-
-    return logger
+logger = structlog.get_logger()
