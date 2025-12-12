@@ -13,8 +13,9 @@ EXCLUDE_PATHS: set[str] = {
     '/redoc',
     '/health',
     '/favicon.ico',
+    '/metrics',
     '/api/v1/external/posts',
-    '/api/v1/send-email'
+    '/api/v1/send-email',
 }
 
 EXCLUDE_PREFIXES: tuple[str, ...] = ('/api/v1/auth',)
